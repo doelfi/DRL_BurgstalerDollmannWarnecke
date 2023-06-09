@@ -121,7 +121,7 @@ def create_dqn_network(num_actions : int):
     model = tf.keras.Model(inputs=input_layer, outputs=x)
     return model
 
-def train_dqn(train_dqn_network, dataset, optimizer, gamma : float, num_training_steps : int):
+def train_dqn(train_dqn_network, target_network, dataset, optimizer, gamma : float, num_training_steps : int):
     def training_step(q_target, observations, actions):
         with tf.GradientTape() as tape:
             q_predictions_all_actions = train_dqn_network(observations) # shape = (batch_size, num_actions)
@@ -137,7 +137,7 @@ def train_dqn(train_dqn_network, dataset, optimizer, gamma : float, num_training
         # Train on data
         state, action, reward, subsequent_state, terminated = state_transition
         # Calculate q-targets
-        q_val = train_dqn_network(subsequent_state)
+        q_val = target_network(subsequent_state)
         q_values.append(q_val)
         max_q_values = tf.reduce_max(q_val, axis=1)
         use_subsequent_state = tf.where(terminated, tf.zeros_like(max_q_values, dtype=tf.float32), tf.ones_like(max_q_values, dtype=tf.float32))
@@ -167,6 +167,18 @@ def test_q_network(test_dqn_network, environment_name : str, num_parallel_tests 
         done = np.all(episodes_finished)
     return np.mean(returns)
 
+def polyak_averaging_weights(source_network, target_network, polyak_averaging_factor: float):
+    source_network_weights = source_network.get_weights()
+    target_network_weights = target_network.get_weights()
+    averaged_weights = []
+    for source_network_weight, target_network_weight in zip(source_network_weights, target_network_weights):
+        fraction_kept_weights = polyak_averaging_factor * target_network_weight
+        fraction_updated_weights = (1 - polyak_averaging_factor) * source_network_weight
+        average_weight = fraction_kept_weights + fraction_updated_weights
+        averaged_weights.append(average_weight)
+    target_network.set_weights(averaged_weights)
+
+
 def dqn():
     ENVIRONMENT_NAME = 'ALE/Breakout-v5'
     NUM_ACTIONS = gym.make(ENVIRONMENT_NAME).action_space.n
@@ -180,16 +192,22 @@ def dqn():
     TEST_EVERY_N_STEPS = 1000
     TEST_NUM_PARALLEL_ENVS = 32
     PREFILL_STEPS = 40_000 / (PARALLEL_GAME_UNROLS * UNROLL_STEPS) # so that we can change the values and still get enough prefill
+    POLYAK_AVERAGING_FACTOR = 0.99
 
     erp = ExperienceReplayBuffer(max_size=ERP_SIZE, 
                                  environment_name=ENVIRONMENT_NAME, 
                                  parallel_game_unrolls=PARALLEL_GAME_UNROLS, 
                                  observation_preprocessing_function=observation_preprocessing_function, 
                                  unroll_steps=UNROLL_STEPS)
+    # This is the DQN we train
     dqn_agent = create_dqn_network(num_actions=NUM_ACTIONS)
     dqn_optimizer = tf.keras.optimizers.Adam()
     # Test the agent
     dqn_agent(tf.random.uniform(shape=(1,84,84,3)))
+    # This is the DQN we use to calculate the q_estimation targets
+    target_network = create_dqn_network(num_actions=NUM_ACTIONS)
+    # copy over the weights from the dqn_agent to the target_network via polyak averaging with factor 0.0
+    polyak_averaging_weights(source_network=dqn_agent, target_network=target_network, polyak_averaging_factor=0.0)
 
     return_tracker = []
     dqn_prediction_error = []
@@ -205,11 +223,17 @@ def dqn():
         erp.fill_with_samples(dqn_agent, EPSILON)
         dataset = erp.create_dataset()
         # Step 2: Train some samples from the replay buffer
-        average_loss, average_q_vals = train_dqn(train_dqn_network=dqn_agent, 
+        average_loss, average_q_vals = train_dqn(train_dqn_network=dqn_agent,
+                                                 target_network=target_network,
                                                  dataset=dataset, 
                                                  optimizer=dqn_optimizer, 
                                                  gamma=GAMMA, 
                                                  num_training_steps=NUM_TRAINING_STEPS)
+        
+        # update the target network via polyak averaging
+        polyak_averaging_weights(source_network=dqn_agent, target_network=target_network, polyak_averaging_factor=POLYAK_AVERAGING_FACTOR)
+
+        # Test the agent
         if step % TEST_EVERY_N_STEPS == 0:
             average_return = test_q_network(dqn_agent, ENVIRONMENT_NAME, TEST_NUM_PARALLEL_ENVS, GAMMA)
             return_tracker.append(average_return)
@@ -234,3 +258,4 @@ if __name__ == "__main__":
 # 3. loss = training_step(q_target, state, action), weil Argument gefehlt hat
 # 4. states = observation_preprocessing_function(states) in test_q_network(), weil dim-error
 # Changed hyperparameter:NUM_TRAINING_ITER, TEST_NUM_PARALLEL_ENVS
+#%%
