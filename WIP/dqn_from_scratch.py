@@ -121,7 +121,7 @@ def create_dqn_network(num_actions : int):
     model = tf.keras.Model(inputs=input_layer, outputs=x)
     return model
 
-def train_dqn(train_dqn_network, target_network, dataset, optimizer, gamma : float, num_training_steps : int):
+def train_dqn(train_dqn_network, target_network, dataset, optimizer, gamma : float, num_training_steps : int, use_double=False):
     def training_step(q_target, observations, actions):
         with tf.GradientTape() as tape:
             q_predictions_all_actions = train_dqn_network(observations) # shape = (batch_size, num_actions)
@@ -137,9 +137,19 @@ def train_dqn(train_dqn_network, target_network, dataset, optimizer, gamma : flo
         # Train on data
         state, action, reward, subsequent_state, terminated = state_transition
         # Calculate q-targets
-        q_val = target_network(subsequent_state)
-        q_values.append(q_val)
-        max_q_values = tf.reduce_max(q_val, axis=1)
+        # if use_double is false, a normal DQN approach with delayed target is used
+        # if true, a Double DQN approach is used
+        if use_double:
+            q_val_source = train_dqn_network(subsequent_state)
+            q_val_target = target_network(subsequent_state)
+            # get the indices of the highest value from the source network
+            max_q_value_indices = tf.argmax(q_val_source, axis=1)
+            # get the value from the target_network using the indices from the source network
+            max_q_values = tf.gather(q_val_target,max_q_value_indices,axis=1) # untested, I hope the function does what I think it does :)
+        else:
+            q_val = target_network(subsequent_state)
+            q_values.append(q_val)
+            max_q_values = tf.reduce_max(q_val, axis=1)
         use_subsequent_state = tf.where(terminated, tf.zeros_like(max_q_values, dtype=tf.float32), tf.ones_like(max_q_values, dtype=tf.float32))
         q_target = reward + (gamma*max_q_values*use_subsequent_state)
         loss = training_step(q_target, state, action)
@@ -228,8 +238,9 @@ def dqn():
                                                  dataset=dataset, 
                                                  optimizer=dqn_optimizer, 
                                                  gamma=GAMMA, 
-                                                 num_training_steps=NUM_TRAINING_STEPS)
-        
+                                                 num_training_steps=NUM_TRAINING_STEPS,
+                                                 use_double=True)
+
         # update the target network via polyak averaging
         polyak_averaging_weights(source_network=dqn_agent, target_network=target_network, polyak_averaging_factor=POLYAK_AVERAGING_FACTOR)
 
@@ -259,3 +270,11 @@ if __name__ == "__main__":
 # 4. states = observation_preprocessing_function(states) in test_q_network(), weil dim-error
 # Changed hyperparameter:NUM_TRAINING_ITER, TEST_NUM_PARALLEL_ENVS
 #%%
+
+# Sachen die ich im Vergleich zu den Videos geändert habe:
+# 1. PREFILL_STEPS wird so berechnet, dass wir immer etwa 40_000 values im ERP haben, selbst wenn wir die Anzahl der erps ändern
+
+# Sachen die ich hinzugefügt habe
+# 1. Double DQN approach. Ich hab das über einen boolean gelöst, d.h. wenn man den in der Trainingsmethode auf false setzt,
+# dann behält man die Version aus den Videos bei.
+# Ich hoffe, dass tf.gather so funktioniert wie ich mir das vorstelle
