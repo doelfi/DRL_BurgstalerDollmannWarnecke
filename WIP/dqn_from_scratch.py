@@ -179,6 +179,7 @@ def dqn():
     NUM_TRAINING_ITER = 5000
     TEST_EVERY_N_STEPS = 1000
     TEST_NUM_PARALLEL_ENVS = 32
+    PREFILL_STEPS = 40_000 / (PARALLEL_GAME_UNROLS * UNROLL_STEPS) # so that we can change the values and still get enough prefill
 
     erp = ExperienceReplayBuffer(max_size=ERP_SIZE, 
                                  environment_name=ENVIRONMENT_NAME, 
@@ -193,6 +194,11 @@ def dqn():
     return_tracker = []
     dqn_prediction_error = []
     average_q_values = []
+
+    # prefill the replay buffer
+    prefill_exploration_epsilon = 1.0
+    for prefill_step in range(PREFILL_STEPS):
+        erp.fill_with_samples(dqn_agent, prefill_exploration_epsilon)
     
     for step in range(NUM_TRAINING_ITER):
         # Step 1: Put s, a, r, s', t transitions into replay buffer
