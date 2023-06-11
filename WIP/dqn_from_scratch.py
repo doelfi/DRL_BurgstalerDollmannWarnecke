@@ -201,7 +201,7 @@ def dqn():
     NUM_TRAINING_ITER = 5000
     TEST_EVERY_N_STEPS = 1000
     TEST_NUM_PARALLEL_ENVS = 32
-    PREFILL_STEPS = 40_000 / (PARALLEL_GAME_UNROLS * UNROLL_STEPS) # so that we can change the values and still get enough prefill
+    PREFILL_STEPS = int(40_000 / (PARALLEL_GAME_UNROLS * UNROLL_STEPS)) # so that we can change the values and still get enough prefill
     POLYAK_AVERAGING_FACTOR = 0.99
 
     erp = ExperienceReplayBuffer(max_size=ERP_SIZE, 
