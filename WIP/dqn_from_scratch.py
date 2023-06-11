@@ -1,8 +1,11 @@
+import datetime
+
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import tensorflow as tf
 import gymnasium as gym
+import matplotlib as plt
 
 
 class ExperienceReplayBuffer():
@@ -188,6 +191,24 @@ def polyak_averaging_weights(source_network, target_network, polyak_averaging_fa
         averaged_weights.append(average_weight)
     target_network.set_weights(averaged_weights)
 
+def visualize_results(results_df, step):
+    # create three subplots
+    fig, axis = plt.subplots(3, 1)
+    # include the row idxs explicitly in the results_df
+    results_df['step'] = results_df.index
+    # plot the average return
+    sns.lineplot(x='step', y='average_return', data=results_df, ax=axis[0])
+    # plot the average loss
+    sns.lineplot(x='step', y='average_loss', data=results_df, ax=axis[1])
+    # plot the average q values
+    sns.lineplot(x='step', y='average_q_values', data=results_df, ax=axis[2])
+    # create a timestring from the timestamp
+    timestring = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    # save the figure
+    plt.savefig(f'./results/{timestring}_results:step{step}.png')
+    # close the figure
+    plt.close(fig)
+
 
 def dqn():
     ENVIRONMENT_NAME = 'ALE/Breakout-v5'
@@ -251,9 +272,12 @@ def dqn():
             dqn_prediction_error.append(average_loss)
             average_q_values.append(average_q_vals)
             print(f'TESTING: Average return: {average_return}, average loss: {average_loss}, average q-value-estimation: {average_q_values}')
-    
-    results_dict = {'average_return': return_tracker, 'average_loss': dqn_prediction_error, 'average_q_values': average_q_values}
-    #results_df = pd.DataFrame(results_dict)
+            # put all the result lists into a dataframe by transforming them into a dict first
+            results_dict = {'average_return': return_tracker, 'average_loss': dqn_prediction_error, 'average_q_values': average_q_values}
+            results_df = pd.DataFrame(results_dict)
+            # visualize the results with sns
+            visualize_results(results_df, step)
+            print(results_df)
 
     print(results_dict)
     # Visualize
