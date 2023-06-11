@@ -96,8 +96,8 @@ class ExperienceReplayBuffer():
     
 def observation_preprocessing_function(observation):
     # Converts an observation to shape 84x84
-    observation = tf.image.resize(observation, size=(84,84))
     observation = tf.cast(observation, dtype=tf.float32) / 128.0 - 1.0
+    observation = tf.image.resize(observation, size=(84,84))
     return observation
 
 def create_dqn_network(num_actions : int):
@@ -170,14 +170,16 @@ def test_q_network(test_dqn_network, environment_name : str, num_parallel_tests 
 
     timestep = 0
     done = False
-    while not done: 
+    while not done:
         q_values = test_dqn_network(states)
-        actions = tf.argmax(q_values, axis=1)
+        actions = tf.argmax(q_values, axis=1).numpy()
         states, rewards, terminateds, _, _ = envs.step(actions)
+        states = observation_preprocessing_function(states) # we have to preprocess right?
         episodes_finished = np.logical_or(episodes_finished, terminateds)
         returns += ((gamma**timestep)*rewards)*(np.logical_not(episodes_finished).astype(np.float32))
         timestep += 1
         done = np.all(episodes_finished)
+    envs.close()
     return np.mean(returns)
 
 def polyak_averaging_weights(source_network, target_network, polyak_averaging_factor: float):
@@ -213,16 +215,16 @@ def visualize_results(results_df, step):
 def dqn():
     ENVIRONMENT_NAME = 'ALE/Breakout-v5'
     NUM_ACTIONS = gym.make(ENVIRONMENT_NAME).action_space.n
-    ERP_SIZE = 100_000
-    PARALLEL_GAME_UNROLS = 64
-    UNROLL_STEPS = 4
+    ERP_SIZE = 20_000
+    PARALLEL_GAME_UNROLS = 16
+    UNROLL_STEPS = 8
     EPSILON = 0.2
     GAMMA = 0.98
     NUM_TRAINING_STEPS = 4
     NUM_TRAINING_ITER = 5000
-    TEST_EVERY_N_STEPS = 1000
-    TEST_NUM_PARALLEL_ENVS = 32
-    PREFILL_STEPS = int(40_000 / (PARALLEL_GAME_UNROLS * UNROLL_STEPS)) # so that we can change the values and still get enough prefill
+    TEST_EVERY_N_STEPS = 10
+    TEST_NUM_PARALLEL_ENVS = 8
+    PREFILL_STEPS =  int(10_000 / (PARALLEL_GAME_UNROLS * UNROLL_STEPS)) # so that we can change the values and still get enough prefill
     POLYAK_AVERAGING_FACTOR = 0.99
 
     erp = ExperienceReplayBuffer(max_size=ERP_SIZE, 
@@ -256,17 +258,18 @@ def dqn():
         # Step 2: Train some samples from the replay buffer
         average_loss, average_q_vals = train_dqn(train_dqn_network=dqn_agent,
                                                  target_network=target_network,
-                                                 dataset=dataset, 
-                                                 optimizer=dqn_optimizer, 
-                                                 gamma=GAMMA, 
+                                                 dataset=dataset,
+                                                 optimizer=dqn_optimizer,
+                                                 gamma=GAMMA,
                                                  num_training_steps=NUM_TRAINING_STEPS,
                                                  use_double=True)
 
         # update the target network via polyak averaging
-        polyak_averaging_weights(source_network=dqn_agent, target_network=target_network, polyak_averaging_factor=POLYAK_AVERAGING_FACTOR)
+        # polyak_averaging_weights(source_network=dqn_agent, target_network=target_network, polyak_averaging_factor=POLYAK_AVERAGING_FACTOR)
 
         # Test the agent
         if step % TEST_EVERY_N_STEPS == 0:
+            print("TESTING")
             average_return = test_q_network(dqn_agent, ENVIRONMENT_NAME, TEST_NUM_PARALLEL_ENVS, GAMMA)
             return_tracker.append(average_return)
             dqn_prediction_error.append(average_loss)
@@ -278,13 +281,13 @@ def dqn():
             # visualize the results with sns
             visualize_results(results_df, step)
             print(results_df)
+            print("end testing")
 
-    print(results_dict)
+    #print(results_dict)
     # Visualize
     #sns.lineplot(data=results_df, x=results_df.index, y='average_return')
 
 if __name__ == "__main__":
-    print(1)
     dqn()
     
 # Sachen, die ich zu den Videos geändert habe: 
