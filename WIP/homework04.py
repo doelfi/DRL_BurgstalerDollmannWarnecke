@@ -144,6 +144,7 @@ def train_dqn(train_dqn_network, target_network, dataset, optimizer, gamma : flo
         if use_double:
             q_val_source = train_dqn_network(subsequent_state)
             q_val_target = target_network(subsequent_state)
+            q_values.append(q_val_target)
             # get the indices of the highest value from the source network
             max_q_value_indices = tf.argmax(q_val_source, axis=1)
             # get the value from the target_network using the indices from the source network
@@ -223,25 +224,24 @@ def visualize_results(results_df, step):
     # close the figure
     plt.close(fig)
 
-
 def dqn():
     ENVIRONMENT_NAME = 'ALE/Breakout-v5'
     NUM_ACTIONS = gym.make(ENVIRONMENT_NAME).action_space.n
-    ERP_SIZE = 100_000
-    PARALLEL_GAME_UNROLS = 32
+    ERP_SIZE = 60_000
+    PARALLEL_GAME_UNROLLS = 16
     UNROLL_STEPS = 4
     EPSILON = 0.2
     GAMMA = 0.98
     NUM_TRAINING_STEPS = 4
     NUM_TRAINING_ITER = 50000
     TEST_EVERY_N_STEPS = 1000
-    TEST_NUM_PARALLEL_ENVS = 32
-    PREFILL_STEPS =  int(40_000 / (PARALLEL_GAME_UNROLS * UNROLL_STEPS)) # so that we can change the values and still get enough prefill
+    TEST_NUM_PARALLEL_ENVS = 16
+    PREFILL_STEPS = int(40_000 / (PARALLEL_GAME_UNROLLS * UNROLL_STEPS)) # so that we can change the values and still get enough prefill
     POLYAK_AVERAGING_FACTOR = 0.99
 
     erp = ExperienceReplayBuffer(max_size=ERP_SIZE, 
                                  environment_name=ENVIRONMENT_NAME, 
-                                 parallel_game_unrolls=PARALLEL_GAME_UNROLS, 
+                                 parallel_game_unrolls=PARALLEL_GAME_UNROLLS, 
                                  observation_preprocessing_function=observation_preprocessing_function, 
                                  unroll_steps=UNROLL_STEPS)
     # This is the DQN we train
@@ -274,7 +274,7 @@ def dqn():
                                                  optimizer=dqn_optimizer,
                                                  gamma=GAMMA,
                                                  num_training_steps=NUM_TRAINING_STEPS,
-                                                 use_double=False)
+                                                 use_double=True)
 
         # update the target network via polyak averaging
         polyak_averaging_weights(source_network=dqn_agent, target_network=target_network, polyak_averaging_factor=POLYAK_AVERAGING_FACTOR)
